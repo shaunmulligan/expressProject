@@ -1,0 +1,13 @@
+<html>
+	<head>
+
+	</head>
+	<body>
+		<h1> Test index page </h1>
+		<form method="post" action="/" enctype="multipart/form-data">
+    			<input type="text" name="username">
+			<input type="text" regId="regId">
+    			<input type="submit">
+		</form>
+	</body>
+</html>

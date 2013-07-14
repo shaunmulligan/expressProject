@@ -1,0 +1,24 @@
+var sys = require('sys');
+var gcm = require('node-gcm');
+
+var sendPush = function(phone1,messageString){
+
+        var sender = new gcm.Sender('AIzaSyCfJl7ogiY9msupTeN3M7UM2pDKvANvrsI');
+        var registrationIds = [];
+        
+        var message = new gcm.Message({
+                delayWhileIdle: false,
+                timeToLive: 3,
+                data: {
+                        message: messageString
+                }
+        });
+
+        registrationIds.push(phone1);
+        
+        sender.send(message, registrationIds, 4, function (err, result) { console.log(result);});
+       
+
+}
+
+exports.sendPush = sendPush;
