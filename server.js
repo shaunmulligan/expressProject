@@ -1,8 +1,18 @@
 var sendGCM = require("./pushMessage");
 var express = require('express');
-var nano 	= require('nano')('http://localhost:5984');
-var employeesDB = nano.db.use('employees');
-
+//init database 
+//*************************************************************************
+var fs = require("fs");
+var sqlite3 = require("sqlite3");
+var repo = "employeesDB.sqlite";
+fs.exists(repo,function(exists){
+	if(exists){
+		console.log("DB exists");
+	}else{
+		console.log("DB not found");
+	}
+});
+//*************************************************************************
 var server = express();
 server.configure(function(){
 
@@ -20,55 +30,52 @@ server.post('/reg', function(req, res) {
 	REGID = req.body.regId;
 
 	//write new employee registration to employees database
-	employeesDB.insert({ regId: REGID , onDuty: "false" }, USERNAME, function(err, body) {
-  	if (!err)
-    	console.log('the following was added to db: '+body);
-	});
+	//*************************************************************************
+
+	//*************************************************************************
 
 	//notify new user with regId:REGID of successful registration
 	sendGCM.sendPush(REGID,"Successful Registration");	
 });
 
 //this is the entry page, allowing changes in who is on duty
-server.get('/',function(req,res){
-	var response = "<h2>select who is on duty</h2><br>";
+server.get('/',function(req,res){	
+	var db = new sqlite3.Database(repo);
+	var response = "<h2>Update Whos is on duty</h2><br>";
 		response+= "<form action=\"update\" method=\"post\">";
 	    
-	    //get all registered employees
-		employeesDB.view('employeesList','employeesList',function(err,body){
-	  		if(!err){
-		  		body.rows.forEach(function(doc){
-		  			response += "<input type=\"radio\" name="+doc.key+" value="+doc.key+">"+doc.key+"</input><br>";
-		  		});
-	  		}
-	  		response += "<button type=submit>update</button>";
-	  		response += "</form>";
-	  		res.send(response);
-	  	});   
+	    //get all registered employees from DB and display as radio buttons
+		//*************************************************************************
+		var stmt = "SELECT name FROM users";
+		db.each(stmt,function(err,row){
+			console.log("user name read from DB: "+row.name);
+			response += "<input type=\"radio\" name="+row.name+" value="+row.name+">"+row.name+"</input><br>";
+			
+		},function(error,numberRows){
+			response += "<button type=submit>update</button>";
+		  	response += "</form>";
+		  	res.send(response);
+		  	console.log("response has been sent");
+		});
+	db.close(); 	 
 });
 
 server.post('/update',function(req,res){
-	resetOnDutyList();
-	//cycle through emplyees submitted as on duty.
-	for (var key in req.body){
-		console.log("key: "+key);
-		console.log("value: "+req.body[key]);
-		//update who is on duty.
-		employeesDB.get(key, { revs_info: true }, function(err, body) {
-		  if (!err)
-		    console.log(body._rev);
-			employeesDB.insert({onDuty: true, "_rev": body._rev}, key, 
-		    function (error, response) {
-		      if(!error) {
-		        console.log("it worked");
-		      } else {
-		        console.log("sad panda");
-		      }
-	    	});
-		});
-
-	}
-	res.send(req.body.shaun);
+	var db = new sqlite3.Database(repo);
+	db.serialize(function(){
+		//reset all users to off duty
+		db.run("UPDATE users SET onDuty = 0 WHERE onDuty=1");
+		//cycle through emplyees submitted from radio buttons as on duty.
+		for (var key in req.body){
+			var username = req.body[key];
+			//update who is on duty.
+			//*************************************************************************
+			db.run("UPDATE users SET onDuty = 1 WHERE name = ?", key);
+			//*************************************************************************
+		}//end of for loop;
+	db.close();
+	res.send(req.body);
+	});//serialize db
 });
 
 //*************************************************************************
@@ -93,40 +100,14 @@ stdin.on( 'data', function( key ){
   }
   // write the key to stdout all normal like
   process.stdout.write( key );
-  employeesDB.view('onDuty','onDutyList',function(err,body){
-  	if(!err){
-  		body.rows.forEach(function(doc){
-  			console.log('push notification sent to: '+doc.key);
-  			sendGCM.sendPush(doc.value,"hello "+ doc.key);
-  		});
-  	}
-  });
+  //push message to all who are on duty
+  //*************************************************************************
+
+  //*************************************************************************
 
 });
 //*************************************************************************
 server.listen(3000);
-
-//sets everyone off duty.
-function resetOnDutyList(){
-		employeesDB.view('employeesList','employeesList',function(err,body){
-	  		if(!err){
-		  		body.rows.forEach(function(doc){
-		  			employeesDB.get(doc.key, { revs_info: false }, function(err, body) {
-					  if (!err)
-					    console.log(body._rev);
-						employeesDB.insert({onDuty: false, "_rev": body._rev}, doc.key, 
-					    function (error, response) {
-					      if(!error) {
-					        console.log("it worked");
-					      } else {
-					        console.log("sad panda");
-					      }
-				    	});
-					});
-		  		});
-	  		}
-		});
-}
 
 // one can check couchDB content at http://localhost:5984/_utils/
 //*************************************************************************
