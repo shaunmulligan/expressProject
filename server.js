@@ -20,24 +20,28 @@ server.configure(function(){
   
 	//server.use(express.static(__dirname + '/public'));
 });
-
 //listen for post requests from new android devices
 server.post('/reg', function(req, res) {
+	var db = new sqlite3.Database(repo);
 	//acknowledge request
 	res.send({ status: 'SUCCESS' });
 	console.log(req.body);
 	USERNAME = req.body.username;
 	REGID = req.body.regId;
-
 	//write new employee registration to employees database
 	//*************************************************************************
-
-	//*************************************************************************
-
-	//notify new user with regId:REGID of successful registration
-	sendGCM.sendPush(REGID,"Successful Registration");	
+	db.run("INSERT INTO users (name, regID, onDuty) VALUES ('"+USERNAME+"','"+REGID+"',0)",function(error){
+		if(!error){
+			console.log("new user has been added to DB");
+			//notify new user with regId:REGID of successful registration
+			sendGCM.sendPush(REGID,"Successful Registration");	
+		}else{
+			console.log("error, new user not added to DB");
+		}
+		db.close();
+	});
+	//*************************************************************************	
 });
-
 //this is the entry page, allowing changes in who is on duty
 server.get('/',function(req,res){	
 	var db = new sqlite3.Database(repo);
@@ -62,6 +66,7 @@ server.get('/',function(req,res){
 
 server.post('/update',function(req,res){
 	var db = new sqlite3.Database(repo);
+	var response = "The following will receive doorbell notifications: ";
 	db.serialize(function(){
 		//reset all users to off duty
 		db.run("UPDATE users SET onDuty = 0 WHERE onDuty=1");
@@ -71,27 +76,25 @@ server.post('/update',function(req,res){
 			//update who is on duty.
 			//*************************************************************************
 			db.run("UPDATE users SET onDuty = 1 WHERE name = ?", key);
+			response += username+", ";
 			//*************************************************************************
 		}//end of for loop;
 	db.close();
-	res.send(req.body);
+	res.send(response);
 	});//serialize db
 });
 
 //*************************************************************************
+//event emitter
 //simulated doorbell press
 var stdin = process.stdin;
-
 // without this, we would only get streams once enter is pressed
 stdin.setRawMode( true );
-
 // resume stdin in the parent process (node app won't quit all by itself
 // unless an error or process.exit() happens)
 stdin.resume();
-
 // i don't want binary, do you?
 stdin.setEncoding( 'utf8' );
-
 // on any data into stdin
 stdin.on( 'data', function( key ){
   // ctrl-c ( end of text )
@@ -100,14 +103,24 @@ stdin.on( 'data', function( key ){
   }
   // write the key to stdout all normal like
   process.stdout.write( key );
-  //push message to all who are on duty
-  //*************************************************************************
 
+  //push message to all who are on duty
+  //put this in ee.on('stateChange'....)
+  //*************************************************************************
+  var db = new sqlite3.Database(repo);
+  var stmt = "SELECT name,regID FROM users WHERE onDuty=1";
+  db.each(stmt,function(err,row){
+  	console.log("message pushed to "+row.name);
+  	sendGCM.sendPush(row.regID,"Someone is at the Door!");
+  },function(error,numberRows){
+  	db.close();
+  	console.log(numberRows+" messages where pushed");
+  });
   //*************************************************************************
 
 });
 //*************************************************************************
-server.listen(3000);
 
-// one can check couchDB content at http://localhost:5984/_utils/
+//*************************************************************************
+server.listen(3000);
 //*************************************************************************
